@@ -48,6 +48,10 @@ class HeartRateForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_RESUME_UPLOAD) {
+            collector?.resumeUpload()
+            return START_STICKY
+        }
 
         val bpm = intent?.takeIf { it.hasExtra(EXTRA_BPM) }?.getIntExtra(EXTRA_BPM, 0)?.takeIf { it > 0 }
         if (bpm != null) latestBpm = bpm
@@ -236,6 +240,7 @@ class HeartRateForegroundService : Service() {
         private const val ACTION_START = "com.heartwith.app.COLLECTOR_SERVICE_START"
         private const val ACTION_RESUME_COLLECT = "com.heartwith.app.COLLECTOR_SERVICE_RESUME_COLLECT"
         const val ACTION_RESTART_COLLECT = "com.heartwith.app.COLLECTOR_SERVICE_RESTART_COLLECT"
+        const val ACTION_RESUME_UPLOAD = "com.heartwith.app.ACTION_RESUME_UPLOAD"
         private const val ACTION_STOP = "com.heartwith.app.COLLECTOR_SERVICE_STOP"
         private const val EXTRA_BPM = "bpm"
         private const val EXTRA_APP_FOREGROUND = "app_foreground"

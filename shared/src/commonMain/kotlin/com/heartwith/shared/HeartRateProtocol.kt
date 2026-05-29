@@ -78,6 +78,9 @@ class HeartRateBatcher(private val policy: UploadPolicy = UploadPolicy()) {
 
     fun add(bpm: Int, tMs: Long = nowMs()): Boolean {
         if (bpm !in MIN_BPM..MAX_BPM) return false
+        if (samples.size >= MAX_CACHED_SAMPLES) {
+            samples.removeFirst()
+        }
         samples.addLast(HeartRateSample(tMs, bpm))
         trim(tMs)
         return true
@@ -148,6 +151,7 @@ class HeartRateBatcher(private val policy: UploadPolicy = UploadPolicy()) {
     }
 
     private companion object {
+        const val MAX_CACHED_SAMPLES = 120
         const val MAX_DIRECT_UPLOAD_SAMPLES = 120
         const val OFFLINE_DOWNSAMPLE_STEP_MS = 5_000L
     }

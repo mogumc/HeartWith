@@ -753,6 +753,7 @@ class AndroidHeartRateCollector(
             nextUploadAttemptMs = 0L
             consecutiveUploadFails = 0
             batcher.markUploaded()
+            cancelPauseNotification()
             reportUploadStatus("上传成功 ${response.accepted} 条 · seq ${seq - 1}", onUploadStatus)
         }.onFailure { error ->
             if (error.message == WAITING_FOR_DEVICE_NAME) {
@@ -949,6 +950,15 @@ class AndroidHeartRateCollector(
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val resumeIntent = Intent(context, HeartRateForegroundService::class.java).apply {
+            action = ACTION_RESUME_UPLOAD
+        }
+        val resumePendingIntent = PendingIntent.getService(
+            context,
+            0,
+            resumeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         val notification = NotificationCompat.Builder(context, UPLOAD_FAILURE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_heartwith_notification)
             .setColor(Color.rgb(10, 132, 255))
@@ -956,9 +966,10 @@ class AndroidHeartRateCollector(
             .setContentText("连续失败 $consecutiveUploadFails 次，已暂停上传")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("心率上传连续失败 $consecutiveUploadFails 次，已暂停上传并断开设备。心率采集已缓存数据，请检查服务器状态后重连。"),
+                    .bigText("心率上传连续失败 $consecutiveUploadFails 次，已暂停上传并断开设备。点击「恢复上传」重新连接。"),
             )
             .setContentIntent(pendingIntent)
+            .addAction(0, "恢复上传", resumePendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_ERROR)
@@ -966,6 +977,27 @@ class AndroidHeartRateCollector(
             .build()
         context.getSystemService(NotificationManager::class.java)
             .notify(UPLOAD_FAILURE_NOTIFICATION_ID, notification)
+    }
+
+    private fun cancelPauseNotification() {
+        context.getSystemService(NotificationManager::class.java)
+            .cancel(UPLOAD_FAILURE_NOTIFICATION_ID)
+    }
+
+    fun resumeUpload() {
+        consecutiveUploadFails = 0
+        uploadInFlight = false
+        uploadStartedMs = 0L
+        shouldReconnect = true
+        cancelPauseNotification()
+        val prefs = context.getSharedPreferences(HeartRateForegroundService.PREFS_NAME, Context.MODE_PRIVATE)
+        val lastAddress = prefs.getString(HeartRateForegroundService.KEY_LAST_DEVICE_ADDRESS, null)
+        if (lastAddress != null) {
+            reportUploadStatus("正在恢复上传，重新连接设备...", onUploadStatus)
+            connectAddress(lastAddress, context)
+        } else {
+            reportUploadStatus("未找到历史设备，请手动连接", onUploadStatus)
+        }
     }
 
     private companion object {
@@ -982,6 +1014,7 @@ class AndroidHeartRateCollector(
         const val UPLOAD_WARN_FAILURES = 3
         const val UPLOAD_STUCK_TIMEOUT_MS = 90_000L
         const val UPLOAD_FAILURE_CHANNEL_ID = "heartwith_upload_failure"
+        const val ACTION_RESUME_UPLOAD = "com.heartwith.app.ACTION_RESUME_UPLOAD"
         const val UPLOAD_FAILURE_NOTIFICATION_ID = 1002
         const val UPLOAD_RETRY_NOTIFICATION_ID = 1003
 
