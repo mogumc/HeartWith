@@ -14,8 +14,9 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanSettings
+import android.bluetooth.le.ScanResult
 import android.bluetooth.le.BluetoothLeScanner
 import android.content.Context
 import android.content.Intent
@@ -341,6 +342,10 @@ class AndroidHeartRateCollector(
             .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
             .build()
 
+        val filters = targetAddress?.let { addr ->
+            listOf(ScanFilter.Builder().setDeviceAddress(addr).build())
+        }
+
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 if (!isCurrentOperation(opId)) return
@@ -366,12 +371,12 @@ class AndroidHeartRateCollector(
         reportStatus("低功耗扫描附近 BLE 设备", onStatus)
         activeScanner = scanner
         activeScanCallback = callback
-        scanner.startScan(null, settings, callback)
+        scanner.startScan(filters, settings, callback)
         if (timeoutMs != null) {
             delay(timeoutMs)
             if (isCurrentOperation(opId) && activeScanCallback == callback) {
                 stopActiveScan()
-                reportStatus("后台扫描未发现上次设备，稍后重试", onStatus)
+                reportStatus("扫描未发现上次设备，稍后重试", onStatus)
             }
         }
     }
@@ -482,15 +487,27 @@ class AndroidHeartRateCollector(
                     }
                     gatt.close()
                     if (reconnect && appInForeground) {
-                        reportStatus("设备断开 (status=$status)，稍后重连上次设备", onStatus)
+                        reportStatus("设备断开 (status=$status)，扫描重连", onStatus)
                         scope.launch {
-                            delay(5_000)
-                            if (isCurrentOperation(opId) && shouldReconnect && appInForeground) {
-                                reconnectLastDevice(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm, opId)
+                            delay(2_000)
+                            val targetAddr = lastDevice?.address
+                            if (isCurrentOperation(opId) && shouldReconnect && appInForeground && targetAddr != null) {
+                                runCatching {
+                                    scanAndConnect(
+                                        displayName, connectedDeviceName,
+                                        onStatus, onUploadStatus, onBpm, opId,
+                                        targetAddress = targetAddr,
+                                        timeoutMs = 8_000L,
+                                    )
+                                }.onFailure {
+                                    if (isCurrentOperation(opId) && shouldReconnect) {
+                                        scheduleBackgroundReconnect(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm)
+                                    }
+                                }
                             }
                         }
                     } else if (reconnect) {
-                        reportStatus("设备断开，后台定时重连上次设备", onStatus)
+                        reportStatus("设备断开，尝试后台扫描重连", onStatus)
                         scheduleBackgroundReconnect(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm)
                     } else {
                         reportStatus("已断开，可修改服务器地址和显示名称", onStatus)
@@ -583,7 +600,7 @@ class AndroidHeartRateCollector(
             }
         }
         @Suppress("DEPRECATION")
-        currentGatt = device.connectGatt(context, true, callback, BluetoothDevice.TRANSPORT_LE)
+        currentGatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
         scope.launch {
             delay(CONNECTION_TIMEOUT_MS)
             val gatt = currentGatt
@@ -619,8 +636,12 @@ class AndroidHeartRateCollector(
         val opId = operationId.get()
         val targetAddress = lastDevice?.address ?: return
         backgroundReconnectJob = scope.launch {
+            var attempt = 0
             while (shouldReconnect && !appInForeground) {
-                delay(BACKGROUND_RECONNECT_INTERVAL_MS)
+                attempt++
+                val delayMs = reconnectBackoff(attempt)
+                reportStatus("后台重连 · ${delayMs / 1000}s 后扫描第 ${attempt} 次", onStatus)
+                delay(delayMs)
                 if (!isCurrentOperation(opId) || !shouldReconnect || appInForeground) break
                 if (!hasBlePermission()) {
                     reportStatus("后台重连失败：缺少蓝牙权限", onStatus)
@@ -639,28 +660,18 @@ class AndroidHeartRateCollector(
                         timeoutMs = TARGET_SCAN_TIMEOUT_MS,
                     )
                 }.onFailure { error ->
-                    if (isCurrentOperation(opId)) reportStatus("后台重连失败：${error.message}", onStatus)
+                    if (isCurrentOperation(opId)) reportStatus("后台扫描失败：${error.message}", onStatus)
                 }
-                break
             }
         }
     }
 
-    private fun reconnectLastDevice(
-        displayName: String,
-        deviceModel: String,
-        onStatus: (String) -> Unit,
-        onUploadStatus: (String) -> Unit,
-        onBpm: (Int) -> Unit,
-        opId: Int,
-    ) {
-        val device = lastDevice
-        if (device != null) {
-            reportStatus("正在重连上次设备", onStatus)
-            connect(device, displayName, deviceModel, onStatus, onUploadStatus, onBpm, opId)
-        } else {
-            reportStatus("没有上次连接设备，请重新扫描选择", onStatus)
-        }
+    private fun reconnectBackoff(attempt: Int): Long = when {
+        attempt <= 1 -> 15_000L
+        attempt == 2 -> 30_000L
+        attempt == 3 -> 60_000L
+        attempt == 4 -> 120_000L
+        else -> 300_000L
     }
 
     private fun onHeartRate(
@@ -910,7 +921,6 @@ class AndroidHeartRateCollector(
         const val WAITING_FOR_DEVICE_NAME = "等待蓝牙设备名称"
         const val SCAN_WINDOW_MS = 12_000L
         const val UPLOAD_RETRY_BACKOFF_MS = 15_000L
-        const val BACKGROUND_RECONNECT_INTERVAL_MS = 60_000L
         const val CONNECTION_TIMEOUT_MS = 20_000L
         const val TARGET_SCAN_TIMEOUT_MS = 15_000L
         const val NAME_RETRY_BACKOFF_MS = 8_000L
