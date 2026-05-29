@@ -61,6 +61,7 @@ class AndroidHeartRateCollector(
     private var activeScanner: BluetoothLeScanner? = null
     private var activeScanCallback: ScanCallback? = null
     private var uploadInFlight = false
+    private var uploadStartedMs = 0L
     private var nextUploadAttemptMs = 0L
     private var consecutiveUploadFails = 0
     private var appInForeground = true
@@ -312,6 +313,7 @@ class AndroidHeartRateCollector(
             latestRssi = null
             latestBpm = null
             uploadInFlight = false
+            uploadStartedMs = 0L
             nextUploadAttemptMs = 0L
             consecutiveUploadFails = 0
             stopActiveScan()
@@ -695,10 +697,15 @@ class AndroidHeartRateCollector(
         val now = nowMs()
         if (batcher.shouldFlush(lowPower = !appInForeground, tMs = now)) {
             if (uploadInFlight) {
-                if (appInForeground) {
-                    reportUploadStatus("正在上传，继续缓存 ${batcher.size()} 条", onUploadStatus)
+                // Doze 下协程可能被挂起导致 uploadInFlight 卡死，超时则强制重置
+                if (nowMs() - uploadStartedMs > UPLOAD_STUCK_TIMEOUT_MS) {
+                    uploadInFlight = false
+                } else {
+                    if (appInForeground) {
+                        reportUploadStatus("正在上传，继续缓存 ${batcher.size()} 条", onUploadStatus)
+                    }
+                    return
                 }
-                return
             }
             if (now < nextUploadAttemptMs) {
                 val waitSeconds = ((nextUploadAttemptMs - now) / 1000).coerceAtLeast(1)
@@ -708,6 +715,7 @@ class AndroidHeartRateCollector(
                 return
             }
             uploadInFlight = true
+            uploadStartedMs = nowMs()
             scope.launch {
                 upload(displayName, deviceModel, onUploadStatus)
             }
@@ -925,6 +933,7 @@ class AndroidHeartRateCollector(
         const val TARGET_SCAN_TIMEOUT_MS = 15_000L
         const val NAME_RETRY_BACKOFF_MS = 8_000L
         const val MAX_UPLOAD_FAILURES = 3
+        const val UPLOAD_STUCK_TIMEOUT_MS = 90_000L
         const val UPLOAD_FAILURE_CHANNEL_ID = "heartwith_upload_failure"
         const val UPLOAD_FAILURE_NOTIFICATION_ID = 1002
 
