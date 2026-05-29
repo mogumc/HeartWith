@@ -81,7 +81,7 @@ afterEvaluate {
         doLast {
             val releaseDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
             val source = releaseDir.resolve("app-release.apk")
-            val target = releaseDir.resolve("Heartwith-v$heartwithVersionName-$heartwithVersionCode-release.apk")
+            val target = releaseDir.resolve("HeartWith-$heartwithVersionName-release.apk")
             if (source.exists()) source.copyTo(target, overwrite = true)
         }
     }
