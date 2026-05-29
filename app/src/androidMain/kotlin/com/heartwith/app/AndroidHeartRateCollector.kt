@@ -456,11 +456,16 @@ class AndroidHeartRateCollector(
                     stopActiveScan()
                     backgroundReconnectJob?.cancel()
                     backgroundReconnectJob = null
-                    reportStatus("已连接，发现服务", onStatus)
-                    val discoveryStarted = gatt.discoverServices()
-                    if (!discoveryStarted) {
-                        reportStatus("发现服务失败：未能启动", onStatus)
-                        runCatching { gatt.disconnect() }
+                    reportStatus("已连接，等待链路稳定", onStatus)
+                    scope.launch {
+                        delay(300)
+                        if (!isCurrentGatt(gatt, opId)) return@launch
+                        reportStatus("已连接，发现服务", onStatus)
+                        val discoveryStarted = gatt.discoverServices()
+                        if (!discoveryStarted) {
+                            reportStatus("发现服务失败：未能启动", onStatus)
+                            runCatching { gatt.disconnect() }
+                        }
                     }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     subscribed = false
@@ -470,7 +475,7 @@ class AndroidHeartRateCollector(
                     }
                     gatt.close()
                     if (reconnect && appInForeground) {
-                        reportStatus("设备断开，稍后重连上次设备", onStatus)
+                        reportStatus("设备断开 (status=$status)，稍后重连上次设备", onStatus)
                         scope.launch {
                             delay(5_000)
                             if (isCurrentOperation(opId) && shouldReconnect && appInForeground) {
@@ -571,7 +576,7 @@ class AndroidHeartRateCollector(
             }
         }
         @Suppress("DEPRECATION")
-        currentGatt = device.connectGatt(context, true, callback, BluetoothDevice.TRANSPORT_LE)
+        currentGatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
         scope.launch {
             delay(CONNECTION_TIMEOUT_MS)
             val gatt = currentGatt
