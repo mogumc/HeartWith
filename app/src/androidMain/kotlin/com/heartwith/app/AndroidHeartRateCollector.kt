@@ -78,7 +78,7 @@ class AndroidHeartRateCollector(
     private val discoveredDevices = linkedMapOf<String, BluetoothDevice>()
 
     fun isCollectingOrConnecting(): Boolean {
-        return currentGatt != null || activeScanCallback != null || backgroundReconnectJob?.isActive == true
+        return currentGatt != null || activeScanCallback != null
     }
 
     @Synchronized
