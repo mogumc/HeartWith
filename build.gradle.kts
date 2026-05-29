@@ -41,22 +41,24 @@ kotlin {
             implementation(libs.androidx.core.ktx)
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
+            api(libs.androidx.annotation)
         }
     }
 }
 
-extensions.configure<com.android.build.api.dsl.ApplicationExtension>("android") {
+android {
     namespace = "com.heartwith.app"
-    compileSdk = 35
+    compileSdk = 37
 
     buildFeatures {
+        compose = true
         buildConfig = true
     }
 
     defaultConfig {
         applicationId = "com.heartwith.app"
-        minSdk = 26         
-        targetSdk = 35      
+        minSdk = 26
+        targetSdk = 37
         versionCode = heartwithVersionCode
         versionName = heartwithVersionName
     }
@@ -85,6 +87,10 @@ extensions.configure<com.android.build.api.dsl.ApplicationExtension>("android") 
             )
         }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 afterEvaluate {
