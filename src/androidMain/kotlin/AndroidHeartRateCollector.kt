@@ -456,7 +456,7 @@ class AndroidHeartRateCollector(
             runCatching { oldGatt.disconnect() }
             runCatching { oldGatt.close() }
         }
-        @Volatile var subscribed = false
+        var subscribed = false
         val callback = object : BluetoothGattCallback() {
             override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
                 if (!isCurrentGatt(gatt, opId)) {
