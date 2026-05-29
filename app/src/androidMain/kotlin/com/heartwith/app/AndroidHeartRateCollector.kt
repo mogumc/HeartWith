@@ -688,7 +688,7 @@ class AndroidHeartRateCollector(
         val bpm = measurement.bpm
         reportBpm(bpm, onBpm)
         if (appInForeground) {
-            reportStatus("收到心率 $bpm BPM${latestRssi?.let { " · RSSI $it" } ?: ""}", onStatus)
+            reportStatus("""收到心率 $bpm BPM${latestRssi?.let { " · RSSI $it" } ?: ""}""", onStatus)
         }
         batcher.add(bpm)
         if (appInForeground) {
