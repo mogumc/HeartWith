@@ -50,12 +50,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HeartWith-${{ steps.version.outputs.name }}-release
-          path: build/outputs/apk/release/heartwith-release.apk
+          path: app/build/outputs/apk/release/Heartwith-v*.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: HeartWith ${{ steps.version.outputs.name }}
           files: |
-            build/outputs/apk/release/heartwith-release.apk
+            app/build/outputs/apk/release/Heartwith-v*.apk
           generate_release_notes: true

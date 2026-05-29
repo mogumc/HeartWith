@@ -29,7 +29,7 @@ android {
             manifest.srcFile("src/androidMain/AndroidManifest.xml")
             res.directories.add("src/androidMain/res")
             kotlin.directories.add("src/androidMain/kotlin")
-            kotlin.directories.add("../heartwith-shared/src/commonMain/kotlin")
+            kotlin.directories.add("../shared/src/commonMain/kotlin")
         }
     }
 
@@ -80,7 +80,7 @@ afterEvaluate {
     tasks.named("assembleRelease") {
         doLast {
             val releaseDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
-            val source = releaseDir.resolve("heartwith-compose-release.apk")
+            val source = releaseDir.resolve("app-release.apk")
             val target = releaseDir.resolve("Heartwith-v$heartwithVersionName-$heartwithVersionCode-release.apk")
             if (source.exists()) source.copyTo(target, overwrite = true)
         }
