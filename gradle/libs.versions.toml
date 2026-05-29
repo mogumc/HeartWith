@@ -1,5 +1,5 @@
 [versions]
-agp = "9.1.2"
+agp = "9.2.1"
 kotlin = "2.3.21"
 compose = "1.11.0"
 miuix = "0.9.1"
