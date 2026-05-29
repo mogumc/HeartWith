@@ -2,8 +2,6 @@ package com.heartwith.app
 
 import android.content.Context
 import com.heartwith.shared.HeartwithApi
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 
 object HeartRateCollectorRuntime {
     private var collector: AndroidHeartRateCollector? = null
@@ -16,15 +14,7 @@ object HeartRateCollectorRuntime {
         if (current != null && serverUrlKey == normalizedServerUrl) {
             return current
         }
-        current?.let { old ->
-            runCatching {
-                runBlocking {
-                    withTimeout(3_000L) {
-                        old.disconnect().join()
-                    }
-                }
-            }
-        }
+        current?.disconnect()
         return AndroidHeartRateCollector(
             context = context.applicationContext,
             api = HeartwithApi(normalizedServerUrl),

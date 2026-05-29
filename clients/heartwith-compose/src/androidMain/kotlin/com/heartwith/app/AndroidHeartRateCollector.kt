@@ -68,9 +68,6 @@ class AndroidHeartRateCollector(
     private var passiveBpmListener: ((Int) -> Unit)? = null
     private val operationId = AtomicInteger(0)
     private val discoveredDevices = linkedMapOf<String, BluetoothDevice>()
-    private var reconnectAttemptCount: Int = 0
-    @Volatile
-    private var isConnecting: Boolean = false
 
     fun isCollectingOrConnecting(): Boolean {
         return currentGatt != null || activeScanCallback != null || backgroundReconnectJob?.isActive == true
@@ -295,14 +292,12 @@ class AndroidHeartRateCollector(
     fun disconnect(
         onStatus: (String) -> Unit = {},
         onUploadStatus: (String) -> Unit = {},
-    ): Job {
+    ) {
         val opId = nextOperationId()
-        return scope.launch {
+        scope.launch {
             shouldReconnect = false
             backgroundReconnectJob?.cancel()
             backgroundReconnectJob = null
-            isConnecting = false
-            reconnectAttemptCount = 0
             session = null
             sessionDeviceModel = DEFAULT_DEVICE_MODEL
             batcher = HeartRateBatcher()
@@ -440,12 +435,6 @@ class AndroidHeartRateCollector(
         opId: Int,
     ) {
         if (!isCurrentOperation(opId)) return
-        if (isConnecting) {
-            reportStatus("正在连接中，请稍候", onStatus)
-            return
-        }
-        isConnecting = true
-        reconnectAttemptCount = 0
         lastDevice = device
         connectedDeviceName = preferredDeviceModel(deviceModel, bluetoothDeviceName(device).orEmpty().toDeviceModel())
         backgroundReconnectJob?.cancel()
@@ -463,19 +452,11 @@ class AndroidHeartRateCollector(
                     runCatching { gatt.close() }
                     return
                 }
-                // 检查 GATT 连接状态的 status 参数（非 newState）
-                // status != GATT_SUCCESS 表示底层连接有异常，即使 newState==CONNECTED 也应警惕
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    // status 非 GATT_SUCCESS 说明连接建立过程有异常，常见原因：设备忙、配对失败
-                    // 部分设备会在这种情况下短暂连上后立即断开
-                    if (status != BluetoothGatt.GATT_SUCCESS) {
-                        reportStatus("连接异常 (status=$status)，可能短暂断开", onStatus)
-                    }
                     stopActiveScan()
                     backgroundReconnectJob?.cancel()
                     backgroundReconnectJob = null
                     reportStatus("已连接，发现服务", onStatus)
-                    reconnectAttemptCount = 0 // 连接成功，重置重试计数
                     val discoveryStarted = gatt.discoverServices()
                     if (!discoveryStarted) {
                         reportStatus("发现服务失败：未能启动", onStatus)
@@ -483,24 +464,17 @@ class AndroidHeartRateCollector(
                     }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     subscribed = false
-                    isConnecting = false
                     val reconnect = shouldReconnect
                     if (currentGatt == gatt) {
                         currentGatt = null
                     }
                     gatt.close()
                     if (reconnect && appInForeground) {
-                        reconnectAttemptCount++
-                        if (reconnectAttemptCount > MAX_RECONNECT_ATTEMPTS) {
-                            reportStatus("设备反复断开，已达到重连上限 ($MAX_RECONNECT_ATTEMPTS 次)，请检查设备或重启蓝牙", onStatus)
-                        } else {
-                            val backoffMs = calculateBackoff(reconnectAttemptCount)
-                            reportStatus("设备断开 (${reconnectAttemptCount}/$MAX_RECONNECT_ATTEMPTS)，${backoffMs / 1000}s 后重连", onStatus)
-                            scope.launch {
-                                delay(backoffMs)
-                                if (isCurrentOperation(opId) && shouldReconnect && appInForeground) {
-                                    reconnectLastDevice(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm, opId)
-                                }
+                        reportStatus("设备断开，稍后重连上次设备", onStatus)
+                        scope.launch {
+                            delay(5_000)
+                            if (isCurrentOperation(opId) && shouldReconnect && appInForeground) {
+                                reconnectLastDevice(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm, opId)
                             }
                         }
                     } else if (reconnect) {
@@ -515,7 +489,6 @@ class AndroidHeartRateCollector(
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                 if (!isCurrentGatt(gatt, opId)) return
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    isConnecting = false
                     reportStatus("发现服务失败：$status", onStatus)
                     runCatching { gatt.disconnect() }
                     runCatching { gatt.close() }
@@ -526,7 +499,6 @@ class AndroidHeartRateCollector(
                     .getService(UUID.fromString(HR_SERVICE_UUID))
                     ?.getCharacteristic(UUID.fromString(HR_MEASUREMENT_UUID))
                 if (characteristic == null) {
-                    isConnecting = false
                     reportStatus("设备没有标准心率特征 0x2A37", onStatus)
                     runCatching { gatt.disconnect() }
                     runCatching { gatt.close() }
@@ -552,7 +524,6 @@ class AndroidHeartRateCollector(
                     }
                 }
                 if (!notificationEnabled || !descriptorWriteStarted) {
-                    isConnecting = false
                     reportStatus("订阅心率通知失败，请断开后重试", onStatus)
                     runCatching { gatt.disconnect() }
                     runCatching { gatt.close() }
@@ -569,10 +540,8 @@ class AndroidHeartRateCollector(
                 if (!isCurrentGatt(gatt, opId)) return
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     subscribed = true
-                    isConnecting = false
-                    reportStatus("已订阅心率通知，正在接收数据", onStatus)
+                    reportStatus("已订阅心率通知", onStatus)
                 } else {
-                    isConnecting = false
                     reportStatus("订阅心率通知失败：$status", onStatus)
                     runCatching { gatt.disconnect() }
                     runCatching { gatt.close() }
@@ -602,14 +571,12 @@ class AndroidHeartRateCollector(
             }
         }
         @Suppress("DEPRECATION")
-        // autoConnect=false: 避免系统自动重连与手动重连逻辑冲突导致 GATT 引用错乱
-        currentGatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+        currentGatt = device.connectGatt(context, true, callback, BluetoothDevice.TRANSPORT_LE)
         scope.launch {
             delay(CONNECTION_TIMEOUT_MS)
             val gatt = currentGatt
             if (isCurrentOperation(opId) && gatt != null && !subscribed) {
                 currentGatt = null
-                isConnecting = false
                 runCatching { gatt.disconnect() }
                 runCatching { gatt.close() }
                 reportStatus("连接超时，已释放旧连接，请重试", onStatus)
@@ -880,17 +847,8 @@ class AndroidHeartRateCollector(
         const val CONNECTION_TIMEOUT_MS = 20_000L
         const val TARGET_SCAN_TIMEOUT_MS = 15_000L
         const val NAME_RETRY_BACKOFF_MS = 8_000L
-        const val MAX_RECONNECT_ATTEMPTS = 5
-        const val BASE_RECONNECT_DELAY_MS = 3_000L
-        const val MAX_RECONNECT_DELAY_MS = 30_000L
 
         fun deviceNameKey(address: String): String = "device_name_${address.replace(':', '_')}"
-
-        fun calculateBackoff(attempt: Int): Long {
-            // 指数退避: 3s, 6s, 12s, 24s, 30s(上限)
-            return (BASE_RECONNECT_DELAY_MS * (1 shl minOf(attempt - 1, 3)))
-                .coerceAtMost(MAX_RECONNECT_DELAY_MS)
-        }
     }
 }
 

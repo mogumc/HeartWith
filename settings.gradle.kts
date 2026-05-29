@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "heartwith"
+include(":heartwith-compose")
+project(":heartwith-compose").projectDir = file("clients/heartwith-compose")
