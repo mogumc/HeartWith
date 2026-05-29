@@ -459,7 +459,7 @@ class AndroidHeartRateCollector(
                     reportStatus("已连接，等待链路稳定", onStatus)
                     scope.launch {
                         delay(300)
-                        if (!isCurrentGatt(gatt, opId)) return@launch
+                        if (!isCurrentOperation(opId) || currentGatt != gatt) return@launch
                         reportStatus("已连接，发现服务", onStatus)
                         val discoveryStarted = gatt.discoverServices()
                         if (!discoveryStarted) {
