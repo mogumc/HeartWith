@@ -47,7 +47,7 @@ kotlin {
 
 extensions.configure<com.android.build.api.dsl.ApplicationExtension>("android") {
     namespace = "com.heartwith.app"
-    compileSdk = 37
+    compileSdk = 35
 
     buildFeatures {
         buildConfig = true
@@ -55,8 +55,8 @@ extensions.configure<com.android.build.api.dsl.ApplicationExtension>("android") 
 
     defaultConfig {
         applicationId = "com.heartwith.app"
-        minSdk = 26
-        targetSdk = 36
+        minSdk = 26         
+        targetSdk = 35      
         versionCode = heartwithVersionCode
         versionName = heartwithVersionName
     }
