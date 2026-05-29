@@ -138,8 +138,9 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                val lifecycleOwner = LocalLifecycleOwner.current
+
                 DisposableEffect(collector) {
-                    val lifecycleOwner = LocalLifecycleOwner.current
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
                             syncCollectorSnapshot()
