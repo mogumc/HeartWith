@@ -762,8 +762,8 @@ class AndroidHeartRateCollector(
                 consecutiveUploadFails++
                 val summary = error.uploadSummary()
                 if (consecutiveUploadFails >= MAX_UPLOAD_FAILURES) {
-                    reportUploadStatus("上传连续失败 ${consecutiveUploadFails} 次，断开设备", onUploadStatus)
-                    notifyUploadFailure()
+                    reportUploadStatus("上传连续失败 ${consecutiveUploadFails} 次，暂停上传", onUploadStatus)
+                    notifyUploadPaused()
                     shouldReconnect = false
                     session = null
                     sessionDeviceModel = DEFAULT_DEVICE_MODEL
@@ -772,6 +772,9 @@ class AndroidHeartRateCollector(
                 } else {
                     nextUploadAttemptMs = nowMs() + UPLOAD_RETRY_BACKOFF_MS
                     reportUploadStatus("上传失败 ($consecutiveUploadFails/$MAX_UPLOAD_FAILURES)：$summary · 已缓存 ${batcher.size()} 条", onUploadStatus)
+                    if (consecutiveUploadFails >= UPLOAD_WARN_FAILURES) {
+                        notifyUploadRetrying(consecutiveUploadFails, summary)
+                    }
                 }
             }
         }
@@ -879,14 +882,14 @@ class AndroidHeartRateCollector(
         }
     }
 
-    private fun notifyUploadFailure() {
+    private fun notifyUploadRetrying(failCount: Int, summary: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
                 UPLOAD_FAILURE_CHANNEL_ID,
                 "上传异常提醒",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "心率数据上传连续失败时的提醒"
+                description = "心率数据上传异常时的提醒"
                 setShowBadge(true)
                 setSound(null, null)
                 enableVibration(false)
@@ -906,11 +909,54 @@ class AndroidHeartRateCollector(
         val notification = NotificationCompat.Builder(context, UPLOAD_FAILURE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_heartwith_notification)
             .setColor(Color.rgb(10, 132, 255))
-            .setContentTitle("Heartwith · 上传失败")
-            .setContentText("心率数据上传连续失败 $consecutiveUploadFails 次，已断开设备")
+            .setContentTitle("Heartwith · 上传重试中")
+            .setContentText("已失败 $failCount 次：$summary")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("心率数据上传连续失败 $consecutiveUploadFails 次，已自动断开设备连接。请检查服务器状态后重连。"),
+                    .bigText("心率上传已失败 $failCount 次（$summary），仍将继续重试。心率采集不受影响，数据已本地缓存。"),
+            )
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setSilent(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java)
+            .notify(UPLOAD_RETRY_NOTIFICATION_ID, notification)
+    }
+
+    private fun notifyUploadPaused() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                UPLOAD_FAILURE_CHANNEL_ID,
+                "上传异常提醒",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "心率数据上传异常时的提醒"
+                setShowBadge(true)
+                setSound(null, null)
+                enableVibration(false)
+            }
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            action = HeartRateForegroundService.ACTION_OPEN_FROM_NOTIFICATION
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, UPLOAD_FAILURE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_heartwith_notification)
+            .setColor(Color.rgb(10, 132, 255))
+            .setContentTitle("Heartwith · 上传已暂停")
+            .setContentText("连续失败 $consecutiveUploadFails 次，已暂停上传")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("心率上传连续失败 $consecutiveUploadFails 次，已暂停上传并断开设备。心率采集已缓存数据，请检查服务器状态后重连。"),
             )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -932,10 +978,12 @@ class AndroidHeartRateCollector(
         const val CONNECTION_TIMEOUT_MS = 20_000L
         const val TARGET_SCAN_TIMEOUT_MS = 15_000L
         const val NAME_RETRY_BACKOFF_MS = 8_000L
-        const val MAX_UPLOAD_FAILURES = 3
+        const val MAX_UPLOAD_FAILURES = 6
+        const val UPLOAD_WARN_FAILURES = 3
         const val UPLOAD_STUCK_TIMEOUT_MS = 90_000L
         const val UPLOAD_FAILURE_CHANNEL_ID = "heartwith_upload_failure"
         const val UPLOAD_FAILURE_NOTIFICATION_ID = 1002
+        const val UPLOAD_RETRY_NOTIFICATION_ID = 1003
 
         fun deviceNameKey(address: String): String = "device_name_${address.replace(':', '_')}"
     }

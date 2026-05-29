@@ -184,7 +184,7 @@ class HeartRateForegroundService : Service() {
                 updateRunningNotification(force = true)
             },
             onUploadStatus = { status ->
-                if (status.startsWith("上传失败") || status.startsWith("上传连续失败")) {
+                if (status.startsWith("上传失败") || status.startsWith("上传连续失败") || status.startsWith("上传已暂停")) {
                     uploadFailCount++
                     if (uploadFailCount >= SERVICE_MAX_UPLOAD_FAILS) {
                         scheduleResume(applicationContext, BACKGROUND_RETRY_DELAY_MS)
@@ -254,7 +254,7 @@ class HeartRateForegroundService : Service() {
         private const val FAST_BACKGROUND_RETRY_DELAY_MS = 20_000L
         private const val BACKGROUND_RETRY_DELAY_MS = 60_000L
         private const val BACKGROUND_NOTIFICATION_MIN_INTERVAL_MS = 10_000L
-        private const val SERVICE_MAX_UPLOAD_FAILS = 3
+        private const val SERVICE_MAX_UPLOAD_FAILS = 6
 
         fun start(context: Context, bpm: Int? = null, appInForeground: Boolean = false) {
             val intent = Intent(context, HeartRateForegroundService::class.java).apply {
