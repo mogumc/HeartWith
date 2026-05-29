@@ -992,11 +992,25 @@ class AndroidHeartRateCollector(
         cancelPauseNotification()
         val prefs = context.getSharedPreferences(HeartRateForegroundService.PREFS_NAME, Context.MODE_PRIVATE)
         val lastAddress = prefs.getString(HeartRateForegroundService.KEY_LAST_DEVICE_ADDRESS, null)
+        val lastName = prefs.getString(HeartRateForegroundService.KEY_LAST_DEVICE_NAME, null).orEmpty()
+        val displayName = prefs.getString(HeartRateForegroundService.KEY_DISPLAY_NAME, null)
+            ?: (Build.MODEL ?: "Android")
+        val onStatus: (String) -> Unit = { status -> reportStatus(status, {}) }
+        val onUploadStatus: (String) -> Unit = { status -> reportUploadStatus(status, {}) }
+        val onBpm: (Int) -> Unit = { bpm -> reportBpm(bpm, {}) }
         if (lastAddress != null) {
-            reportUploadStatus("正在恢复上传，重新连接设备...", onUploadStatus)
-            connectAddress(lastAddress, context)
+            reportUploadStatus("正在恢复上传，重新连接设备...", {})
+            connectAddress(
+                address = lastAddress,
+                name = lastName,
+                displayName = displayName,
+                onStatus = onStatus,
+                onUploadStatus = onUploadStatus,
+                onBpm = onBpm,
+                scanFirst = true,
+            )
         } else {
-            reportUploadStatus("未找到历史设备，请手动连接", onUploadStatus)
+            reportUploadStatus("未找到历史设备，请手动连接", {})
         }
     }
 
