@@ -22,6 +22,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.heartwith.shared.HeartwithScreen
 import com.heartwith.shared.HeartwithTheme
 import com.heartwith.shared.HeartwithUiState
@@ -136,6 +139,13 @@ class MainActivity : ComponentActivity() {
                 }
 
                 DisposableEffect(collector) {
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            syncCollectorSnapshot()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
                     collector.setPassiveListener(
                         onStatus = { status -> updateCollectStatus(status) },
                         onUploadStatus = { status -> onUi { state = state.copy(uploadStatus = status) } },
@@ -153,7 +163,10 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                     syncCollectorSnapshot()
-                    onDispose { collector.clearPassiveListener() }
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                        collector.clearPassiveListener()
+                    }
                 }
 
                 fun connectDevice(device: com.heartwith.shared.BleDeviceCandidate) {
