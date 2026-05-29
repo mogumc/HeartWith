@@ -34,4 +34,4 @@ replay_pid*
 
 .gradle/
 
-build/
+**/build/
