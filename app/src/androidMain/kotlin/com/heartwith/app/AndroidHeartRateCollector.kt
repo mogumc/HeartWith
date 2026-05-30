@@ -23,6 +23,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.heartwith.shared.BleDeviceCandidate
 import androidx.core.content.ContextCompat
@@ -337,6 +338,13 @@ class AndroidHeartRateCollector(
         targetAddress: String? = null,
         timeoutMs: Long? = null,
     ) {
+        // 检查 operationId 是否过期，避免竞态条件导致扫描被跳过
+        if (!isCurrentOperation(opId)) {
+            Log.d(TAG, "scanAndConnect: operationId 已过期，跳过扫描")
+            reportStatus("操作已过期，跳过扫描", onStatus)
+            return
+        }
+        
         val scanner = adapter?.bluetoothLeScanner ?: error("蓝牙不可用")
         if (!hasBlePermission()) error("缺少蓝牙权限")
 
@@ -406,7 +414,12 @@ class AndroidHeartRateCollector(
         val scanner = activeScanner
         val callback = activeScanCallback
         if (scanner != null && callback != null && hasBlePermission()) {
-            runCatching { scanner.stopScan(callback) }
+            runCatching { 
+                scanner.stopScan(callback)
+                Log.d(TAG, "扫描已停止")
+            }.onFailure { e ->
+                Log.w(TAG, "扫描异常: ${e.message}")
+            }
         }
         activeScanner = null
         activeScanCallback = null
@@ -488,10 +501,13 @@ class AndroidHeartRateCollector(
                         currentGatt = null
                     }
                     gatt.close()
+                    scope.launch {
+                        delay(100)
+                    }
                     if (reconnect && appInForeground) {
                         reportStatus("设备断开 (status=$status)，扫描重连", onStatus)
                         scope.launch {
-                            delay(2_000)
+                           delay(2_000)
                             val targetAddr = lastDevice?.address
                             if (isCurrentOperation(opId) && shouldReconnect && appInForeground && targetAddr != null) {
                                 runCatching {
@@ -1015,6 +1031,7 @@ class AndroidHeartRateCollector(
     }
 
     private companion object {
+        private const val TAG = "AndroidHeartRateCollector"
         const val PREFS_NAME = "heartwith_collector"
         const val KEY_LAST_DEVICE_NAME = "last_device_name"
         const val DEFAULT_DEVICE_MODEL = "Android BLE"
