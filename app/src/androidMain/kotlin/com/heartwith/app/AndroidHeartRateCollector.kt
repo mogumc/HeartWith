@@ -664,9 +664,53 @@ class AndroidHeartRateCollector(
             }
             if (attempt >= MAX_RECONNECT_ATTEMPTS) {
                 reportStatus("重连 $MAX_RECONNECT_ATTEMPTS 次均失败，请手动重新连接", onStatus)
+                notifyReconnectFailed()
                 shouldReconnect = false
             }
         }
+    }
+
+    private fun notifyReconnectFailed() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                UPLOAD_FAILURE_CHANNEL_ID,
+                "连接异常提醒",
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "设备连接异常时的提醒"
+                setShowBadge(true)
+                setSound(null, null)
+                enableVibration(false)
+            }
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            action = HeartRateForegroundService.ACTION_OPEN_FROM_NOTIFICATION
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, UPLOAD_FAILURE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_heartwith_notification)
+            .setColor(Color.rgb(10, 132, 255))
+            .setContentTitle("Heartwith · 上传已暂停")
+            .setContentText("连续失败 $MAX_RECONNECT_ATTEMPTS 次，已暂停上传")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("设备重连连续失败 $MAX_RECONNECT_ATTEMPTS 次，已暂停上传并断开设备。请打开应用点击「恢复上传」重新连接。"),
+            )
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_ERROR)
+            .setSilent(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java)
+            .notify(UPLOAD_FAILURE_NOTIFICATION_ID, notification)
     }
 
     private fun reconnectBackoff(attempt: Int): Long = when {
@@ -780,7 +824,7 @@ class AndroidHeartRateCollector(
                     val failCount = if (isNetworkError) consecutiveNetworkFails else consecutiveUploadFails
                     val failSource = if (isNetworkError) "网络异常" else "上传失败"
                     reportUploadStatus("$failSource 累计 $failCount 次，暂停上传", onUploadStatus)
-                    notifyUploadPaused()
+                    notifyUploadPaused(failCount)
                     shouldReconnect = false
                     session = null
                     sessionDeviceModel = DEFAULT_DEVICE_MODEL
@@ -956,7 +1000,7 @@ class AndroidHeartRateCollector(
             .notify(UPLOAD_FAILURE_NOTIFICATION_ID, notification)
     }
 
-    private fun notifyUploadPaused() {
+    private fun notifyUploadPaused(failCount: Int = consecutiveUploadFails) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
                 UPLOAD_FAILURE_CHANNEL_ID,
@@ -984,10 +1028,10 @@ class AndroidHeartRateCollector(
             .setSmallIcon(R.drawable.ic_heartwith_notification)
             .setColor(Color.rgb(10, 132, 255))
             .setContentTitle("Heartwith · 上传已暂停")
-            .setContentText("连续失败 $consecutiveUploadFails 次，已暂停上传")
+            .setContentText("连续失败 $failCount 次，已暂停上传")
             .setStyle(
                 NotificationCompat.BigTextStyle()
-                    .bigText("心率上传连续失败 $consecutiveUploadFails 次，已暂停上传并断开设备。请打开应用点击「恢复上传」重新连接。"),
+                    .bigText("心率上传连续失败 $failCount 次，已暂停上传并断开设备。请打开应用点击「恢复上传」重新连接。"),
             )
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
