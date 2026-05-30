@@ -510,28 +510,8 @@ class AndroidHeartRateCollector(
                         currentGatt = null
                     }
                     gatt.close()
-                    if (reconnect && appInForeground) {
-                        reportStatus("设备断开 (status=$status)，扫描重连", onStatus)
-                        scope.launch {
-                            delay(2_000)
-                            val targetAddr = lastDevice?.address
-                            if (isCurrentOperation(opId) && shouldReconnect && appInForeground && targetAddr != null) {
-                                runCatching {
-                                    scanAndConnect(
-                                        displayName, connectedDeviceName,
-                                        onStatus, onUploadStatus, onBpm, opId,
-                                        targetAddress = targetAddr,
-                                        timeoutMs = TARGET_SCAN_TIMEOUT_MS,
-                                    )
-                                }.onFailure {
-                                    if (isCurrentOperation(opId) && shouldReconnect) {
-                                        scheduleBackgroundReconnect(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm)
-                                    }
-                                }
-                            }
-                        }
-                    } else if (reconnect) {
-                        reportStatus("设备断开，尝试后台扫描重连", onStatus)
+                    if (reconnect) {
+                        reportStatus("设备断开 (status=$status)，尝试重连", onStatus)
                         scheduleBackgroundReconnect(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm)
                     } else {
                         reportStatus("已断开，可修改服务器地址和显示名称", onStatus)
@@ -661,17 +641,17 @@ class AndroidHeartRateCollector(
         val targetAddress = lastDevice?.address ?: return
         backgroundReconnectJob = scope.launch {
             var attempt = 0
-            while (shouldReconnect && !appInForeground) {
+            while (shouldReconnect) {
                 attempt++
                 val delayMs = reconnectBackoff(attempt)
-                reportStatus("后台重连 · ${delayMs / 1000}s 后扫描第 ${attempt} 次", onStatus)
+                reportStatus("重连 · ${delayMs / 1000}s 后扫描第 ${attempt} 次", onStatus)
                 delay(delayMs)
-                if (!isCurrentOperation(opId) || !shouldReconnect || appInForeground) break
+                if (!isCurrentOperation(opId) || !shouldReconnect) break
                 if (!hasBlePermission()) {
-                    reportStatus("后台重连失败：缺少蓝牙权限", onStatus)
+                    reportStatus("重连失败：缺少蓝牙权限", onStatus)
                     continue
                 }
-                reportStatus("后台扫描上次设备", onStatus)
+                reportStatus("扫描上次设备", onStatus)
                 runCatching {
                     scanAndConnect(
                         displayName = displayName,
@@ -684,7 +664,7 @@ class AndroidHeartRateCollector(
                         timeoutMs = TARGET_SCAN_TIMEOUT_MS,
                     )
                 }.onFailure { error ->
-                    if (isCurrentOperation(opId)) reportStatus("后台扫描失败：${error.message}", onStatus)
+                    if (isCurrentOperation(opId)) reportStatus("扫描失败：${error.message}", onStatus)
                 }
             }
         }
