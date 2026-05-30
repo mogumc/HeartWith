@@ -790,13 +790,14 @@ class AndroidHeartRateCollector(
                 consecutiveUploadFails++
                 val summary = error.uploadSummary()
                 if (consecutiveUploadFails >= MAX_UPLOAD_FAILURES) {
-                    reportUploadStatus("上传连续失败 ${consecutiveUploadFails} 次，暂停上传", onUploadStatus)
+                    val failCount = if (isNetworkError) consecutiveNetworkFails else consecutiveUploadFails
+                    val failSource = if (isNetworkError) "网络异常" else "上传失败"
+                    reportUploadStatus("$failSource 累计 $failCount 次，暂停上传", onUploadStatus)
                     notifyUploadPaused()
                     shouldReconnect = false
                     session = null
                     sessionDeviceModel = DEFAULT_DEVICE_MODEL
                     closeCurrentGatt(disconnectFirst = true, settleMs = 0L)
-                    reportUploadStatus("未上传", onUploadStatus)
                 } else {
                     nextUploadAttemptMs = nowMs() + UPLOAD_RETRY_BACKOFF_MS
                     reportUploadStatus("上传失败 ($consecutiveUploadFails/$MAX_UPLOAD_FAILURES)：$summary · 已缓存 ${batcher.size()} 条", onUploadStatus)
