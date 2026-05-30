@@ -376,6 +376,11 @@ class AndroidHeartRateCollector(
             override fun onScanFailed(errorCode: Int) {
                 if (!isCurrentOperation(opId)) return
                 reportStatus("扫描失败：$errorCode", onStatus)
+                if (shouldReconnect) {
+                    scope.launch {
+                        scheduleBackgroundReconnect(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm)
+                    }
+                }
             }
         }
 
@@ -388,6 +393,9 @@ class AndroidHeartRateCollector(
             if (isCurrentOperation(opId) && activeScanCallback == callback) {
                 stopActiveScan()
                 reportStatus("扫描未发现上次设备，稍后重试", onStatus)
+                if (shouldReconnect) {
+                    scheduleBackgroundReconnect(displayName, connectedDeviceName, onStatus, onUploadStatus, onBpm)
+                }
             }
         }
     }
