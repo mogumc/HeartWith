@@ -634,45 +634,47 @@ class AndroidHeartRateCollector(
         onBpm: (Int) -> Unit,
     ) {
         if (backgroundReconnectJob?.isActive == true) return
-        val opId = operationId.get()
         val targetAddress = lastDevice?.address ?: return
         backgroundReconnectJob = scope.launch {
             var attempt = 0
-            while (shouldReconnect) {
+            while (shouldReconnect && attempt < MAX_RECONNECT_ATTEMPTS) {
                 attempt++
                 val delayMs = reconnectBackoff(attempt)
-                reportStatus("重连 · ${delayMs / 1000}s 后扫描第 ${attempt} 次", onStatus)
+                reportStatus("重连 · ${delayMs / 1000}s 后扫描第 $attempt 次", onStatus)
                 delay(delayMs)
-                if (!isCurrentOperation(opId) || !shouldReconnect) break
+                if (!shouldReconnect) break
                 if (!hasBlePermission()) {
                     reportStatus("重连失败：缺少蓝牙权限", onStatus)
                     continue
                 }
                 reportStatus("扫描上次设备", onStatus)
                 runCatching {
-                    scanAndConnect(
+                    connectAddress(
+                        address = targetAddress,
+                        name = deviceModel,
                         displayName = displayName,
-                        deviceModel = deviceModel,
                         onStatus = onStatus,
                         onUploadStatus = onUploadStatus,
                         onBpm = onBpm,
-                        opId = opId,
-                        targetAddress = targetAddress,
-                        timeoutMs = TARGET_SCAN_TIMEOUT_MS,
+                        scanFirst = true,
                     )
                 }.onFailure { error ->
-                    if (isCurrentOperation(opId)) reportStatus("扫描失败：${error.message}", onStatus)
+                    reportStatus("扫描失败：${error.message}", onStatus)
                 }
+            }
+            if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+                reportStatus("重连 $MAX_RECONNECT_ATTEMPTS 次均失败，请手动重新连接", onStatus)
+                shouldReconnect = false
             }
         }
     }
 
     private fun reconnectBackoff(attempt: Int): Long = when {
-        attempt <= 1 -> 15_000L
-        attempt == 2 -> 30_000L
-        attempt == 3 -> 60_000L
-        attempt == 4 -> 120_000L
-        else -> 300_000L
+        attempt <= 2 -> 0L
+        attempt == 3 -> 10_000L
+        attempt == 4 -> 15_000L
+        attempt == 5 -> 30_000L
+        else -> 60_000L
     }
 
     private fun onHeartRate(
@@ -1051,6 +1053,7 @@ class AndroidHeartRateCollector(
         const val UPLOAD_STUCK_TIMEOUT_MS = 90_000L
         const val UPLOAD_FAILURE_CHANNEL_ID = "heartwith_upload_failure"
         const val UPLOAD_FAILURE_NOTIFICATION_ID = 1002
+        const val MAX_RECONNECT_ATTEMPTS = 15
 
         fun deviceNameKey(address: String): String = "device_name_${address.replace(':', '_')}"
     }
