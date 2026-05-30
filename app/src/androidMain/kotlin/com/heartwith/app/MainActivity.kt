@@ -149,7 +149,14 @@ class MainActivity : ComponentActivity() {
                     lifecycleOwner.lifecycle.addObserver(observer)
                     collector.setPassiveListener(
                         onStatus = { status -> updateCollectStatus(status) },
-                        onUploadStatus = { status -> onUi { state = state.copy(uploadStatus = status) } },
+                        onUploadStatus = { status -> 
+                            onUi { 
+                                state = state.copy(
+                                    uploadStatus = status,
+                                    showResumeUpload = status.contains("暂停") || status.contains("连续失败"),
+                                )
+                            }
+                        },
                         onBpm = { bpm ->
                             onUi {
                                 processNotificationBpm = bpm
@@ -391,6 +398,9 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     onRefresh = {},
+                    onResumeUpload = {
+                        activeCollector?.resumeUpload()
+                    },
                     onStartCollect = {
                         autoConnectAttempted = false
                         preferences.edit().putBoolean(KEY_COLLECTION_STOPPED, false).apply()

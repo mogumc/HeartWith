@@ -70,6 +70,7 @@ data class HeartwithUiState(
     val collecting: Boolean = false,
     val backgroundEnabled: Boolean = true,
     val hideFromRecents: Boolean = false,
+    val showResumeUpload: Boolean = false,
 )
 
 @Composable
@@ -87,6 +88,7 @@ fun HeartwithScreen(
     onConnectDevice: (BleDeviceCandidate) -> Unit = {},
     onDisconnect: () -> Unit = {},
     onCloseCollection: () -> Unit = {},
+    onResumeUpload: () -> Unit = {},
     expandedParticipantIds: Set<String> = emptySet(),
     seriesByParticipantId: Map<String, List<SeriesSample>> = emptyMap(),
     seriesStatusByParticipantId: Map<String, String> = emptyMap(),
@@ -155,6 +157,7 @@ fun HeartwithScreen(
                         onStartCollect = onStartCollect,
                         onDisconnect = onDisconnect,
                         onCloseCollection = onCloseCollection,
+                        onResumeUpload = onResumeUpload,
                     )
                 }
                 if (canCollect) {
@@ -272,6 +275,7 @@ private fun StatusOverview(
     onStartCollect: () -> Unit,
     onDisconnect: () -> Unit,
     onCloseCollection: () -> Unit,
+    onResumeUpload: () -> Unit = {},
 ) {
     if (readOnlyWeb && showLobby) {
         Row(
@@ -367,12 +371,18 @@ private fun StatusOverview(
                     Text(
                         text = "上传：${state.uploadStatus}",
                         fontSize = 13.sp,
-                        color = if (state.uploadStatus.contains("失败")) {
+                        color = if (state.uploadStatus.contains("失败") || state.uploadStatus.contains("暂停")) {
                             Color(0xFFE5484D)
                         } else {
                             MiuixTheme.colorScheme.onSurfaceVariantSummary
                         },
                     )
+                    if (state.showResumeUpload) {
+                        TextButton(
+                            text = "恢复上传",
+                            onClick = onResumeUpload,
+                        )
+                    }
                 }
                 if (canCollect && (state.collecting || state.scanning)) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
