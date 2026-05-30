@@ -419,7 +419,7 @@ class AndroidHeartRateCollector(
                 scanner.stopScan(callback)
                 Log.d(TAG, "扫描已停止")
             }.onFailure { e ->
-                Log.w(TAG, "扫描异常: ${e.message}")
+                Log.w(TAG, "停止扫描失败: ${e.message}")
             }
         }
         activeScanner = null
@@ -502,13 +502,10 @@ class AndroidHeartRateCollector(
                         currentGatt = null
                     }
                     gatt.close()
-                    scope.launch {
-                        delay(100)
-                    }
                     if (reconnect && appInForeground) {
                         reportStatus("设备断开 (status=$status)，扫描重连", onStatus)
                         scope.launch {
-                           delay(2_000)
+                            delay(2_000)
                             val targetAddr = lastDevice?.address
                             if (isCurrentOperation(opId) && shouldReconnect && appInForeground && targetAddr != null) {
                                 runCatching {
@@ -516,7 +513,7 @@ class AndroidHeartRateCollector(
                                         displayName, connectedDeviceName,
                                         onStatus, onUploadStatus, onBpm, opId,
                                         targetAddress = targetAddr,
-                                        timeoutMs = 8_000L,
+                                        timeoutMs = TARGET_SCAN_TIMEOUT_MS,
                                     )
                                 }.onFailure {
                                     if (isCurrentOperation(opId) && shouldReconnect) {
@@ -818,9 +815,10 @@ class AndroidHeartRateCollector(
         return if (message == null) type else "$type: $message"
     }
 
+    /** 判断是否为网络层错误（超时、连接失败等），区别于服务端返回的业务错误 */
     private fun Throwable.isNetworkError(): Boolean {
         val msg = message?.lowercase() ?: return false
-        return msg.contains("connect") && msg.contains("expired") ||
+        return (msg.contains("connect") && msg.contains("expired")) ||
             msg.contains("timeout") ||
             msg.contains("connection refused") ||
             msg.contains("connection reset") ||
@@ -829,11 +827,7 @@ class AndroidHeartRateCollector(
             msg.contains("network is unreachable") ||
             msg.contains("enotfound") ||
             msg.contains("econnrefused") ||
-            msg.contains("econnreset") ||
-            this is java.net.SocketTimeoutException ||
-            this is java.net.ConnectException ||
-            this is java.net.UnknownHostException ||
-            this is java.io.IOException
+            msg.contains("econnreset")
     }
 
     private fun nextOperationId(): Int = operationId.incrementAndGet()
