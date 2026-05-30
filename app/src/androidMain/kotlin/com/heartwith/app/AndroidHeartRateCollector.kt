@@ -65,6 +65,7 @@ class AndroidHeartRateCollector(
     private var uploadStartedMs = 0L
     private var nextUploadAttemptMs = 0L
     private var consecutiveUploadFails = 0
+    private var consecutiveNetworkFails = 0
     private var appInForeground = true
     private var lastDevice: BluetoothDevice? = null
     private var latestStatus: String = "等待开始"
@@ -768,6 +769,7 @@ class AndroidHeartRateCollector(
             seq += 1
             nextUploadAttemptMs = 0L
             consecutiveUploadFails = 0
+            consecutiveNetworkFails = 0
             batcher.markUploaded()
             cancelPauseNotification()
             reportUploadStatus("上传成功 ${response.accepted} 条 · seq ${seq - 1}", onUploadStatus)
@@ -776,6 +778,18 @@ class AndroidHeartRateCollector(
                 nextUploadAttemptMs = nowMs() + NAME_RETRY_BACKOFF_MS
                 reportUploadStatus("等待蓝牙设备名称 · 已缓存 ${batcher.size()} 条", onUploadStatus)
             } else {
+                val isNetworkError = error.isNetworkError()
+                if (isNetworkError) {
+                    consecutiveNetworkFails++
+                    val summary = error.uploadSummary()
+                    if (consecutiveNetworkFails >= MAX_NETWORK_FAILURES) {
+                        consecutiveUploadFails = MAX_UPLOAD_FAILURES
+                    } else {
+                        nextUploadAttemptMs = nowMs() + NETWORK_RETRY_BACKOFF_MS
+                        reportUploadStatus("网络异常 ($consecutiveNetworkFails/$MAX_NETWORK_FAILURES)：$summary · 已缓存 ${batcher.size()} 条", onUploadStatus)
+                        return@onFailure
+                    }
+                }
                 consecutiveUploadFails++
                 val summary = error.uploadSummary()
                 if (consecutiveUploadFails >= MAX_UPLOAD_FAILURES) {
@@ -802,6 +816,24 @@ class AndroidHeartRateCollector(
         val type = this::class.simpleName ?: "UnknownError"
         val message = message?.takeIf { it.isNotBlank() }
         return if (message == null) type else "$type: $message"
+    }
+
+    private fun Throwable.isNetworkError(): Boolean {
+        val msg = message?.lowercase() ?: return false
+        return msg.contains("connect") && msg.contains("expired") ||
+            msg.contains("timeout") ||
+            msg.contains("connection refused") ||
+            msg.contains("connection reset") ||
+            msg.contains("unresolved host") ||
+            msg.contains("no route to host") ||
+            msg.contains("network is unreachable") ||
+            msg.contains("enotfound") ||
+            msg.contains("econnrefused") ||
+            msg.contains("econnreset") ||
+            this is java.net.SocketTimeoutException ||
+            this is java.net.ConnectException ||
+            this is java.net.UnknownHostException ||
+            this is java.io.IOException
     }
 
     private fun nextOperationId(): Int = operationId.incrementAndGet()
@@ -992,6 +1024,7 @@ class AndroidHeartRateCollector(
 
     fun resumeUpload() {
         consecutiveUploadFails = 0
+        consecutiveNetworkFails = 0
         uploadInFlight = false
         uploadStartedMs = 0L
         shouldReconnect = true
@@ -1028,10 +1061,12 @@ class AndroidHeartRateCollector(
         const val WAITING_FOR_DEVICE_NAME = "等待蓝牙设备名称"
         const val SCAN_WINDOW_MS = 12_000L
         const val UPLOAD_RETRY_BACKOFF_MS = 15_000L
+        const val NETWORK_RETRY_BACKOFF_MS = 5_000L
         const val CONNECTION_TIMEOUT_MS = 20_000L
         const val TARGET_SCAN_TIMEOUT_MS = 15_000L
         const val NAME_RETRY_BACKOFF_MS = 8_000L
         const val MAX_UPLOAD_FAILURES = 6
+        const val MAX_NETWORK_FAILURES = 10
         const val UPLOAD_WARN_FAILURES = 3
         const val UPLOAD_STUCK_TIMEOUT_MS = 90_000L
         const val UPLOAD_FAILURE_CHANNEL_ID = "heartwith_upload_failure"

@@ -28,9 +28,9 @@ class HeartwithApi(
     private val baseUrl: String,
     private val client: HttpClient = HttpClient {
         install(HttpTimeout) {
-            connectTimeoutMillis = 2_500
-            requestTimeoutMillis = 5_000
-            socketTimeoutMillis = 5_000
+            connectTimeoutMillis = 5_000
+            requestTimeoutMillis = 10_000
+            socketTimeoutMillis = 8_000
         }
         install(ContentNegotiation) {
             json(ApiJson)
