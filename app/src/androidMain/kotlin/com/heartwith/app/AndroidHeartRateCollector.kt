@@ -353,9 +353,6 @@ class AndroidHeartRateCollector(
             .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
             .build()
 
-        val filters = targetAddress?.let { addr ->
-            listOf(ScanFilter.Builder().setDeviceAddress(addr).build())
-        }
 
         val callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
@@ -387,7 +384,7 @@ class AndroidHeartRateCollector(
         reportStatus("低功耗扫描附近 BLE 设备", onStatus)
         activeScanner = scanner
         activeScanCallback = callback
-        scanner.startScan(filters, settings, callback)
+        scanner.startScan(null, settings, callback)
         if (timeoutMs != null) {
             delay(timeoutMs)
             if (isCurrentOperation(opId) && activeScanCallback == callback) {
